@@ -157,7 +157,6 @@ void fit(int runnumber)
 
     TF1 *fitFunc2 = new TF1("fitFunc2", "[0] + [1]*x", 10, z_max);
     fitFunc2->SetParameters(vec_trkr_z_val.at(nstep - 1), (vec_trkr_z_val.at(nstep - 1) - vec_trkr_z_val.at(nstep/2 + 2)) / (vec_peak_pos_val.at(nstep - 1) - vec_peak_pos_val.at(nstep/2 + 2)));
-    fitFunc2->SetParameters(5, -0.03);
     fitFunc2->SetParLimits(0, -20, 20);
     fitFunc2->SetParLimits(1, -1, 1);
     graph->Fit(fitFunc2, "R");
