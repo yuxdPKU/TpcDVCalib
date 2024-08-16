@@ -7,6 +7,14 @@
 #include "RooPlot.h"
 #include "TCanvas.h"
 
+#include <stdio.h>
+#include <iostream>
+
+#include <cdbobjects/CDBTTree.h>
+
+// cppcheck-suppress unknownMacro
+R__LOAD_LIBRARY(libcdbobjects.so)
+
 std::vector<float> vec_peak_pos_val;
 std::vector<float> vec_peak_pos_err;
 
@@ -47,17 +55,17 @@ void fit_dz(const char* filename = "data.root",
 
     // Define the parameters for the Gaussian
     RooRealVar mean("mean", "mean of gaussian", data.mean(x), xmin, xmax);
-    RooRealVar sigma("sigma", "width of gaussian", data.sigma(x), 0, xmax);
+    RooRealVar sigma("sigma", "width of gaussian", data.sigma(x), 0.001, (xmax-xmin)/2);
 
     // Create the Gaussian PDF
     RooGaussian gauss("gauss", "gaussian PDF", x, mean, sigma);
-    RooRealVar ngauss("ngauss","number of gaussian",0.5*data.sumEntries(),0,data.sumEntries());
+    RooRealVar ngauss("ngauss","number of gaussian",0.01*data.sumEntries(),0,data.sumEntries());
 
     // Define the parameters for the linear background
     RooRealVar a0("a0", "constant", 0, -10, 10);
     RooRealVar a1("a1", "slope", 0, -1, 1);
     RooPolynomial poly("poly", "linear background", x, RooArgList(a1, a0));
-    RooRealVar npoly("npoly","number of poly",0.5*data.sumEntries(),0,data.sumEntries());
+    RooRealVar npoly("npoly","number of poly",0.2*data.sumEntries(),0,data.sumEntries());
 
     // Combine the Gaussian and the polynomial into a single PDF
     RooAddPdf model("model", "gauss + poly", RooArgList(gauss, poly), RooArgList(ngauss, npoly));
@@ -104,14 +112,43 @@ void fit_dz(const char* filename = "data.root",
     canvas->SetBottomMargin(0.15);
     frame->Draw();
     pt->Draw();
-    canvas->SaveAs(outfile);
 
+    std::string dirName = "figure/" + std::to_string(runnumber);
+    std::string command = "ls " + dirName + " 2>/dev/null";
+    int result = system(command.c_str());
+
+    if (result != 0) {
+        std::string mkdirCommand = "mkdir -p " + std::string(dirName);
+        int mkdirResult = system(mkdirCommand.c_str());
+
+        if (mkdirResult == 0) {
+            std::cout << "Directory '" << dirName << "' created successfully." << std::endl;
+        } else {
+            std::cerr << "Failed to create directory '" << dirName << "'." << std::endl;
+        }
+    } else {
+        std::cout << "Directory '" << dirName << "' already exists." << std::endl;
+    }
+
+    canvas->SaveAs(outfile);
     delete canvas;
 */
+
     file->Close();
     delete file;
 
     system("rm tmp.root");
+}
+
+void CDBTTreeWrite(const std::string &fname = "test.root", float dv=0.007)
+{
+  CDBTTree *cdbttree = new CDBTTree(fname);
+  cdbttree->SetSingleFloatValue("tpc_drift_velocity",dv); // unit: cm/ns
+  cdbttree->CommitSingle();
+  cdbttree->Print();
+  cdbttree->WriteCDBTTree();
+  delete cdbttree;
+  //gSystem->Exit(0);
 }
 
 void fit(int runnumber)
@@ -125,10 +162,10 @@ void fit(int runnumber)
     vec_peak_pos_err.clear();
     vec_trkr_z_val.clear();
     vec_trkr_z_err.clear();
-    float z_min = -130;
-    float z_max = 130;
+    float z_min = -140;
+    float z_max = 140;
     float z_range = z_max - z_min;
-    int nstep = 26;
+    int nstep = 14;
     float z_stepsize = z_range / nstep;
     for (int i=0; i<nstep; i++)
     {
@@ -136,7 +173,7 @@ void fit(int runnumber)
       float z_cut_max = z_min + (i+1) * z_stepsize;
       vec_trkr_z_val.push_back((z_cut_min+z_cut_max)/2);
       vec_trkr_z_err.push_back((z_cut_max-z_cut_min)/2);
-      fit_dz(Form("%d.root",runnumber), "tree", "dz", Form("fabs(dphi)<0.1 && track_z>%f && track_z<%f",z_cut_min,z_cut_max), Form("figure/%d/dz_fit_cuttrkrz_%d.pdf",runnumber,i), Form("Run %d, Track Z#in[%.0f,%.0f] cm",runnumber,z_cut_min,z_cut_max),runnumber);
+      fit_dz(Form("root/%d.root",runnumber), "tree", "dz", Form("fabs(dphi)<0.1 && track_z>%f && track_z<%f",z_cut_min,z_cut_max), Form("figure/%d/dz_fit_cuttrkrz_%d.pdf",runnumber,i), Form("Run %d, Track Z#in[%.0f,%.0f] cm",runnumber,z_cut_min,z_cut_max),runnumber);
     }
 
     TCanvas *c1 = new TCanvas("c1", "Fitting Example", 800, 600);
@@ -150,13 +187,13 @@ void fit(int runnumber)
     graph->GetYaxis()->SetRangeUser(-50,20);
 
     TF1 *fitFunc1 = new TF1("fitFunc1", "[0] + [1]*x", z_min, -10);
-    fitFunc1->SetParameters(vec_trkr_z_val.at(nstep/2 - 2), (vec_trkr_z_val.at(nstep/2 - 2) - vec_trkr_z_val.at(0)) / (vec_peak_pos_val.at(nstep/2 - 2) - vec_peak_pos_val.at(0)));
+    fitFunc1->SetParameters(vec_peak_pos_val.at(nstep/2 - 2), (vec_peak_pos_val.at(nstep/2 - 2) - vec_peak_pos_val.at(0)) / (vec_trkr_z_val.at(nstep/2 - 2) - vec_trkr_z_val.at(0)));
     fitFunc1->SetParLimits(0, -20, 20);
     fitFunc1->SetParLimits(1, -1, 1);
     graph->Fit(fitFunc1, "R");
 
     TF1 *fitFunc2 = new TF1("fitFunc2", "[0] + [1]*x", 10, z_max);
-    fitFunc2->SetParameters(vec_trkr_z_val.at(nstep - 1), (vec_trkr_z_val.at(nstep - 1) - vec_trkr_z_val.at(nstep/2 + 2)) / (vec_peak_pos_val.at(nstep - 1) - vec_peak_pos_val.at(nstep/2 + 2)));
+    fitFunc2->SetParameters(vec_peak_pos_val.at(nstep/2 + 2), (vec_peak_pos_val.at(nstep - 1) - vec_peak_pos_val.at(nstep/2 + 2)) / (vec_trkr_z_val.at(nstep - 1) - vec_trkr_z_val.at(nstep/2 + 2)));
     fitFunc2->SetParLimits(0, -20, 20);
     fitFunc2->SetParLimits(1, -1, 1);
     graph->Fit(fitFunc2, "R");
@@ -213,4 +250,6 @@ void fit(int runnumber)
 
     c1->Update();
     c1->SaveAs(Form("./figure/dz_fit_trkrz_Run%d.pdf",runnumber));
+
+    CDBTTreeWrite(Form("cdbttree/tpc_drift_velocity_%d.root",runnumber), (float) driftvelo_new);
 }
